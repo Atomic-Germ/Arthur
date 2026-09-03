@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../api";
 
 const EXPORTS = [
   { id: "markdown", label: "Markdown (.md)" },
@@ -29,12 +30,63 @@ export default function ChapterSidebar({
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(null);
   const [forking, setForking] = useState(false);
+  const [voice, setVoice] = useState(null);
+  const [clone, setClone] = useState(false);
+  const [voiceFile, setVoiceFile] = useState(null);
+  const [transcript, setTranscript] = useState("");
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+
+  async function refreshVoice() {
+    try {
+      const status = await api.authorVoiceStatus();
+      setVoice(status);
+      if (!status.exists) setClone(false);
+    } catch {
+      /* voice panel is optional */
+    }
+  }
+
+  async function handleExportOpen() {
+    const next = !exportOpen;
+    setExportOpen(next);
+    if (next) await refreshVoice();
+  }
+
+  async function handleSaveVoice() {
+    if (!voiceFile || voiceBusy) return;
+    setVoiceBusy(true);
+    setVoiceError("");
+    try {
+      await api.uploadAuthorVoice(voiceFile, transcript.trim());
+      setVoiceFile(null);
+      setTranscript("");
+      await refreshVoice();
+    } catch (err) {
+      setVoiceError(err.message);
+    } finally {
+      setVoiceBusy(false);
+    }
+  }
+
+  async function handleDeleteVoice() {
+    setVoiceBusy(true);
+    setVoiceError("");
+    try {
+      await api.deleteAuthorVoice();
+      await refreshVoice();
+    } catch (err) {
+      setVoiceError(err.message);
+    } finally {
+      setVoiceBusy(false);
+    }
+  }
 
   async function handleExport(fmt) {
     if (!onExport || exporting) return;
     setExporting(fmt);
     try {
-      await onExport(fmt);
+      await onExport(fmt, fmt === "audiobook-example" ? { clone } : {});
       setExportOpen(false);
     } finally {
       setExporting(null);
@@ -108,7 +160,7 @@ export default function ChapterSidebar({
         <button
           type="button"
           className="btn-ghost w-full justify-between border border-panel-border px-2.5 py-2 text-xs"
-          onClick={() => setExportOpen((v) => !v)}
+          onClick={handleExportOpen}
           disabled={!project?.id}
         >
           <span>Export</span>
@@ -130,9 +182,69 @@ export default function ChapterSidebar({
                 </li>
               ))}
             </ul>
+
+            <div className="border-t border-panel-border px-3 py-2">
+              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-ink-200">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={clone && voice?.exists}
+                  disabled={!voice?.exists || !!exporting}
+                  onChange={(e) => setClone(e.target.checked)}
+                />
+                Read in my voice (cloned)
+              </label>
+              {voice?.exists ? (
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="font-mono text-[10px] text-ink-500">
+                    voice ready{voice.seconds ? ` · ${voice.seconds}s` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-[10px] text-ink-500 underline hover:text-red-300 disabled:opacity-50"
+                    disabled={voiceBusy}
+                    onClick={handleDeleteVoice}
+                  >
+                    remove
+                  </button>
+                </div>
+              ) : (
+                <details className="mt-1">
+                  <summary className="cursor-pointer font-mono text-[10px] text-ink-500 hover:text-ink-300">
+                    + add your voice sample
+                  </summary>
+                  <input
+                    type="file"
+                    accept="audio/*,.wav,.mp3,.flac,.ogg"
+                    className="mt-2 block w-full text-[10px] text-ink-400 file:mr-2 file:rounded file:border-0 file:bg-panel file:px-2 file:py-1 file:text-[10px] file:text-ink-200"
+                    onChange={(e) => setVoiceFile(e.target.files?.[0] || null)}
+                  />
+                  <textarea
+                    value={transcript}
+                    onChange={(e) => setTranscript(e.target.value)}
+                    placeholder="Type exactly what the recording says…"
+                    rows={2}
+                    className="mt-2 w-full rounded border border-panel-border bg-panel px-2 py-1 text-[11px] text-ink-100 placeholder:text-ink-600 focus:border-accent focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    className="btn-ghost mt-1.5 w-full justify-center border border-panel-border px-2 py-1 text-[10px]"
+                    disabled={!voiceFile || !transcript.trim() || voiceBusy}
+                    onClick={handleSaveVoice}
+                  >
+                    {voiceBusy ? "Saving…" : "Save voice"}
+                  </button>
+                </details>
+              )}
+              {voiceError && (
+                <p className="mt-1 text-[10px] text-red-300">{voiceError}</p>
+              )}
+            </div>
+
             <p className="border-t border-panel-border px-3 py-2 text-[10px] leading-snug text-ink-500">
-              The audiobook example embeds spoken guardrails — it is a preview for
-              hearing your work aloud, not a deliverable.
+              The audiobook example renders at 16 kHz with spoken guardrails — a
+              preview for hearing your work aloud (GPU recommended), never a
+              deliverable.
             </p>
           </div>
         )}

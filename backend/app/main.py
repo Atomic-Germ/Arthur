@@ -70,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(series.router, prefix="/api")
     app.include_router(extract.router, prefix="/api")
     app.include_router(tts.router, prefix="/api")
+    app.include_router(tts.voice_router, prefix="/api")
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health():

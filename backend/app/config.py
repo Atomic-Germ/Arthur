@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     # Auto-index on save (safe with hash backend)
     auto_index: bool = True
 
+    # TTS: engine for the guarded audiobook example ("auto" prefers audio8,
+    # falling back to piper when its model is absent; the in-editor Listen
+    # clip always uses piper). tts_device runs the Audio8 engine: "cpu" by
+    # default (some ROCm builds segfault in mamba kernels); set "cuda" to
+    # opt in to GPU inference where the stack supports it.
+    tts_engine: str = "auto"
+    tts_device: str = "cpu"
+
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",

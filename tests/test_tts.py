@@ -1,5 +1,6 @@
 """TTS service + API tests. Uses a fake voice (no network, no real model)."""
 
+import math
 import sys
 import wave
 from io import BytesIO
@@ -78,6 +79,39 @@ def client(tmp_path, monkeypatch):
             return self._voice
 
     monkeypatch.setattr(tts_mod, "get_tts", lambda: _FakeTTS(tts_dir))
+
+    from app.services import audio8 as audio8_mod
+
+    class _FakeAudio8(audio8_mod.Audio8TTS):
+        """Hermetic stand-in: emits silent 16 kHz chunks, availability opt-in."""
+
+        def __init__(self, available=True):
+            super().__init__(tmp_path)
+            self._available = available
+            self.references = []
+
+        def available(self):
+            return self._available
+
+        def synth(self, text, reference=None):
+            if reference is not None:
+                self.references.append(reference)
+            return [(b"\x00\x00" * 1600, 16000)]  # 0.1s @ 16 kHz
+
+        def export_book(self, chapters, out_path, pacing=None, reference=None):
+            meta = tts_mod.render_guarded_book(
+                lambda t: self.synth(t, reference),
+                chapters,
+                out_path,
+                pacing or tts_mod.Pacing(),
+                audio8_mod.OUTPUT_RATE,
+            )
+            meta["engine"] = "audio8"
+            meta["rate"] = audio8_mod.OUTPUT_RATE
+            return meta
+
+    fake_audio8 = _FakeAudio8(available=False)
+    monkeypatch.setattr(audio8_mod, "get_audio8", lambda: fake_audio8)
 
     from app.main import create_app
 
@@ -357,4 +391,198 @@ def test_periodic_guardrail_reinserts_after_interval(tmp_path, monkeypatch):
     assert meta["duration_seconds"] > 100
     with wave.open(str(out), "rb") as w:
         assert w.getnframes() > 0
+
+
+# ── audio8 engine (book preview) ───────────────────────────────
+
+
+def _audio8_fake(client):
+    from app.services import audio8 as audio8_mod
+
+    fake = audio8_mod.get_audio8()
+    return audio8_mod, fake
+
+
+def test_tts_status_reports_audio8_and_author_voice(client):
+    p = client.post("/api/projects", json={"title": "Audio Book"}).json()
+    body = client.get(f"/api/projects/{p['id']}/tts/status").json()
+    assert body["audio8"]["available"] is False
+    assert body["audio8"]["output_rate"] == 16000
+    assert "0.1b" in body["audio8"]["model_id"]
+    assert body["author_voice"]["exists"] is False
+
+
+def test_tts_export_auto_falls_back_to_piper(client):
+    """With the Audio8 model absent, auto keeps serving the piper voice."""
+    p = client.post("/api/projects", json={"title": "Audio Book"}).json()
+    client.post(
+        f"/api/projects/{p['id']}/chapters",
+        json={"title": "Chapter 1", "content": "Prose."},
+    )
+    r = client.get(f"/api/projects/{p['id']}/tts/export")
+    assert r.status_code == 200
+    with wave.open(BytesIO(r.content), "rb") as w:
+        assert w.getframerate() == 22050
+    assert "engine=piper" in r.headers.get("x-audio-meta", "")
+
+
+def test_tts_export_engine_auto_prefers_audio8_at_16k(client):
+    _, fake = _audio8_fake(client)
+    fake._available = True
+    p = client.post("/api/projects", json={"title": "Audio Book"}).json()
+    client.post(
+        f"/api/projects/{p['id']}/chapters",
+        json={"title": "Chapter 1", "content": "Prose."},
+    )
+    r = client.get(f"/api/projects/{p['id']}/tts/export?engine=auto")
+    assert r.status_code == 200
+    with wave.open(BytesIO(r.content), "rb") as w:
+        assert w.getframerate() == 16000
+        assert w.getnchannels() == 1 and w.getsampwidth() == 2
+    meta = r.headers.get("x-audio-meta", "")
+    assert "engine=audio8" in meta
+    assert "rate=16000" in meta
+
+
+def test_tts_export_explicit_audio8_unavailable_is_503(client):
+    p = client.post("/api/projects", json={"title": "Audio Book"}).json()
+    client.post(
+        f"/api/projects/{p['id']}/chapters",
+        json={"title": "Chapter 1", "content": "Prose."},
+    )
+    r = client.get(f"/api/projects/{p['id']}/tts/export?engine=audio8")
+    assert r.status_code == 503
+    assert "audio8 download" in r.json()["detail"]
+
+
+def test_tts_export_rejects_unknown_engine(client):
+    p = client.post("/api/projects", json={"title": "Audio Book"}).json()
+    r = client.get(f"/api/projects/{p['id']}/tts/export?engine=elevenlabs")
+    assert r.status_code == 400
+
+
+def test_tts_export_clone_requires_saved_profile(client):
+    _, fake = _audio8_fake(client)
+    fake._available = True
+    p = client.post("/api/projects", json={"title": "Audio Book"}).json()
+    client.post(
+        f"/api/projects/{p['id']}/chapters",
+        json={"title": "Chapter 1", "content": "Prose."},
+    )
+    r = client.get(f"/api/projects/{p['id']}/tts/export?clone=true")
+    assert r.status_code == 400
+    assert "author voice" in r.json()["detail"].lower()
+
+
+def test_tts_export_clone_with_profile_passes_reference(client, tmp_path, monkeypatch):
+    import struct
+
+    _, fake = _audio8_fake(client)
+    fake._available = True
+
+    sr = 16000
+    samples = [int(8000 * math.sin(2 * math.pi * 220 * i / sr)) for i in range(sr)]
+    buf = BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(struct.pack("<%dh" % len(samples), *samples))
+    up = client.post(
+        "/api/tts/author-voice",
+        files={"file": ("me.wav", buf.getvalue(), "audio/wav")},
+        data={"transcript": "A spoken reference sentence."},
+    )
+    assert up.status_code == 200
+    assert up.json()["saved"] is True
+
+    p = client.post("/api/projects", json={"title": "Audio Book"}).json()
+    client.post(
+        f"/api/projects/{p['id']}/chapters",
+        json={"title": "Chapter 1", "content": "Prose."},
+    )
+    r = client.get(f"/api/projects/{p['id']}/tts/export?engine=audio8&clone=true")
+    assert r.status_code == 200
+    waveform, rate, transcript = fake.references[0]
+    assert rate == sr and len(waveform) == sr
+    assert transcript == "A spoken reference sentence."
+
+
+def test_author_voice_upload_validation(client):
+    r = client.post(
+        "/api/tts/author-voice",
+        files={"file": ("bad.wav", b"not audio", "audio/wav")},
+        data={"transcript": "words"},
+    )
+    assert r.status_code == 400
+
+    good = _wav_bytes(1.0)
+    r2 = client.post(
+        "/api/tts/author-voice",
+        files={"file": ("me.wav", good, "audio/wav")},
+        data={"transcript": "   "},
+    )
+    assert r2.status_code == 400
+
+
+def test_author_voice_status_and_delete(client):
+    st = client.post(
+        "/api/tts/author-voice",
+        files={"file": ("me.wav", _wav_bytes(1.0), "audio/wav")},
+        data={"transcript": "Reference line."},
+    )
+    assert st.status_code == 200
+    status = client.get("/api/tts/author-voice/status").json()
+    assert status["exists"] is True
+    assert status["seconds"] >= 1.0
+    assert "Reference line." in status["transcript"]
+
+    deleted = client.delete("/api/tts/author-voice").json()
+    assert deleted["removed"] is True
+    assert client.get("/api/tts/author-voice/status").json()["exists"] is False
+
+
+def _wav_bytes(seconds: float) -> bytes:
+    import math
+    import struct
+
+    sr = 16000
+    n = int(sr * seconds)
+    samples = [int(8000 * math.sin(2 * math.pi * 220 * i / sr)) for i in range(n)]
+    buf = BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(struct.pack("<%dh" % len(samples), *samples))
+    return buf.getvalue()
+
+
+def test_resample_to_scales_length():
+    import numpy as np
+
+    from app.services.audio8 import OUTPUT_RATE, resample_to
+
+    x = np.zeros(44100, dtype=np.float32)  # 1 s at native codec rate
+    y = resample_to(x, 44100, OUTPUT_RATE)
+    assert len(y) == OUTPUT_RATE
+    assert y.dtype == np.float32
+    # Identity case returns the input untouched.
+    same = resample_to(x, 44100, 44100)
+    assert len(same) == 44100
+
+
+def test_chunk_text_respects_limit_and_sentences():
+    from app.services.audio8 import MAX_CHUNK_CHARS, _chunk_text
+
+    text = " ".join(f"Sentence number {i} is here." for i in range(60))
+    chunks = _chunk_text(text)
+    assert all(len(c) <= MAX_CHUNK_CHARS for c in chunks)
+    assert " ".join(chunks).split() == text.split()
+
+    monster = "word " * 500 + "end."  # one unbroken run, no sentence breaks
+    hard = _chunk_text(monster, limit=300)
+    assert all(len(c) <= 300 for c in hard)
+
+    assert _chunk_text("   ") == []
 

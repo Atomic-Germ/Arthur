@@ -229,8 +229,9 @@ export const api = {
     return await res.blob();
   },
 
-  /** Full-book audiobook example — WAV with guardrail disclaimers embedded. */
-  async downloadTtsExport(projectId, pacing = {}) {
+  /** Full-book audiobook example — WAV with guardrail disclaimers embedded.
+   *  opts.engine: "auto" | "audio8" | "piper"; opts.clone: use saved author voice. */
+  async downloadTtsExport(projectId, pacing = {}, opts = {}) {
     const params = new URLSearchParams();
     if (pacing.paragraph_pause !== undefined)
       params.set("paragraph_pause", pacing.paragraph_pause);
@@ -244,6 +245,8 @@ export const api = {
       params.set("comma_pause", pacing.comma_pause);
     if (pacing.speech_rate !== undefined)
       params.set("speech_rate", pacing.speech_rate);
+    if (opts.engine) params.set("engine", opts.engine);
+    if (opts.clone) params.set("clone", "true");
     const qs = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(
       `${BASE}/projects/${projectId}/tts/export${qs}`,
@@ -273,6 +276,32 @@ export const api = {
     URL.revokeObjectURL(url);
     return filename;
   },
+
+  authorVoiceStatus: () =>
+    request("/tts/author-voice/status", { timeoutMs: 10_000 }),
+
+  async uploadAuthorVoice(file, transcript) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("transcript", transcript);
+    const res = await fetch(`${BASE}/tts/author-voice`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const j = await res.json();
+        detail = j.detail || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    return res.json();
+  },
+
+  deleteAuthorVoice: () => request("/tts/author-voice", { method: "DELETE" }),
 
   listCharacters: (projectId) =>
     request(`/projects/${projectId}/characters`, { timeoutMs: 10_000 }),

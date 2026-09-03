@@ -288,10 +288,10 @@ export default function Workspace({
     }
   }
 
-  async function handleExport(format) {
+  async function handleExport(format, opts = {}) {
     try {
       if (format === "audiobook-example") {
-        await api.downloadTtsExport(projectId, ttsPacing);
+        await api.downloadTtsExport(projectId, ttsPacing, opts);
         return;
       }
       await api.downloadExport(projectId, format);

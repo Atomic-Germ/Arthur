@@ -1,18 +1,22 @@
-"""Local neural text-to-speech (piper-tts) for reading the author's prose aloud.
+"""Local neural text-to-speech for reading the author's prose aloud.
 
 Two output paths mirror the feature's two use-cases:
 
 * ``preview_text`` — a fast, lightweight clip of a short selection (the "does
-  this sound right out loud?" case). Intentionally small and quick, no guardrail.
+  this sound right out loud?" case). Intentionally small and quick, no
+  guardrail. Always piper (this module).
 
 * ``export_book`` — a full-length audiobook-style WAV of the whole manuscript.
   This is explicitly an *example*, never a deliverable: a spoken disclaimer
   ("This audiobook is not for publication and has been generated with AI") is
   embedded at every chapter start and again roughly every 5 minutes of audio,
-  so the file can never be mistaken for a publishable recording.
+  so the file can never be mistaken for a publishable recording. The book
+  preview defaults to the higher-quality Audio8 engine at 16 kHz
+  (``app.services.audio8``), optionally cloned from the author's own voice,
+  with piper as the fallback.
 
 Intent: help an author hear what their writing sounds like out loud. It never
-writes for them; it only reads their own words back in a neutral voice.
+writes for them; it only reads their own words back.
 """
 
 import logging
@@ -169,6 +173,101 @@ class Pacing:
         }
 
 
+def render_guarded_book(
+    synth, chapters: list, out_path: Path, pacing: Pacing, rate: int
+) -> dict:
+    """Render a guarded audiobook example using any synthesis backend.
+
+    ``synth(text) -> list[(pcm_int16_bytes, sample_rate)]`` turns text into
+    mono 16-bit chunks at a single fixed rate. Guardrail: a spoken disclaimer
+    is emitted at the start of every chapter and again whenever ~5 minutes of
+    audio have accumulated since the last one. Returns metadata.
+    """
+    if not chapters:
+        raise ValueError("No chapters to synthesize.")
+
+    disclaimer_chunks = synth(DISCLAIMER)
+
+    running_sec = 0.0
+    last_guard = 0.0
+    disclaimer_count = 0
+
+    def emit(chunks: list, tail_pause: float = 0.0) -> None:
+        nonlocal running_sec
+        for pcm, chunk_rate in chunks:
+            wr.writeframes(pcm)
+            running_sec += _seconds(chunk_rate, len(pcm) // 2)
+        if tail_pause > 0:
+            wr.writeframes(_silence(rate, tail_pause)[0])
+            running_sec += tail_pause
+
+    def emit_disclaimer() -> None:
+        nonlocal last_guard, disclaimer_count
+        emit(disclaimer_chunks)
+        last_guard = running_sec
+        disclaimer_count += 1
+
+    with wave.open(str(out_path), "wb") as wr:
+        wr.setnchannels(1)
+        wr.setsampwidth(2)
+        wr.setframerate(rate)
+
+        for idx, chapter in enumerate(chapters, 1):
+            # Guardrail at each chapter start.
+            emit_disclaimer()
+
+            # Spoken heading so the listener knows where they are.
+            intro = CHAPTER_INTRO.format(n=idx)
+            if (chapter.title or "").strip():
+                intro = f"{intro} {chapter.title.strip()}"
+            emit(synth(intro), pacing.chapter_pause)
+
+            body = (chapter.content or "").strip()
+            if body:
+                paragraphs = _split_paragraphs(body)
+                for pi, para in enumerate(paragraphs):
+                    if _is_scene_break(para):
+                        if pi > 0:
+                            wr.writeframes(
+                                _silence(rate, pacing.scene_pause)[0]
+                            )
+                            running_sec += pacing.scene_pause
+                        continue
+                    emit(
+                        _synth_paragraph_with(synth, para, pacing, rate),
+                        pacing.paragraph_pause,
+                    )
+
+            # Periodic re-guardrail if long enough since the last one.
+            if running_sec - last_guard >= GUARDRAIL_INTERVAL_SEC:
+                emit_disclaimer()
+
+    return {
+        "chapters": len(chapters),
+        "duration_seconds": running_sec,
+        "disclaimers": disclaimer_count,
+    }
+
+
+def _synth_paragraph_with(synth, text: str, pacing: Pacing, rate: int) -> list:
+    """Splice quote/comma pauses around synth() calls for one paragraph."""
+    split_quotes = pacing.quote_pause > 0
+    split_commas = pacing.comma_pause > 0
+    if not (split_quotes or split_commas):
+        return synth(text)
+    pieces: list = []
+    for kind, seg in _split_paragraph_units(
+        text, split_quotes=split_quotes, split_commas=split_commas
+    ):
+        if kind == "text":
+            pieces.extend(synth(seg))
+        elif kind == "quote":
+            pieces.append(_silence(rate, pacing.quote_pause))
+        elif kind == "comma":
+            pieces.append(_silence(rate, pacing.comma_pause))
+    return pieces
+
+
 class TTSService:
     def __init__(self, model_dir: Path):
         self._model_dir = model_dir
@@ -225,21 +324,9 @@ class TTSService:
         self, text: str, pacing: Pacing, rate: int
     ) -> list:
         """Synthesize one paragraph, splicing quote/comma pauses at boundaries."""
-        split_quotes = pacing.quote_pause > 0
-        split_commas = pacing.comma_pause > 0
-        if not (split_quotes or split_commas):
-            return self.synth(text, pacing)
-        pieces: list = []
-        for kind, seg in _split_paragraph_units(
-            text, split_quotes=split_quotes, split_commas=split_commas
-        ):
-            if kind == "text":
-                pieces.extend(self.synth(seg, pacing))
-            elif kind == "quote":
-                pieces.append(_silence(rate, pacing.quote_pause))
-            elif kind == "comma":
-                pieces.append(_silence(rate, pacing.comma_pause))
-        return pieces
+        return _synth_paragraph_with(
+            lambda t: self.synth(t, pacing), text, pacing, rate
+        )
 
     def preview_wav(self, text: str, pacing: Pacing | None = None) -> bytes:
         """Render a short selection to a monophonic 16-bit WAV (no guardrail)."""
@@ -279,72 +366,10 @@ class TTSService:
         and again whenever ~5 minutes of audio have accumulated since the last
         one. Returns metadata (chapter count, duration, disclaimer count).
         """
-        if not chapters:
-            raise ValueError("No chapters to synthesize.")
         pacing = pacing or Pacing()
-
-        disclaimer_chunks = self.synth(DISCLAIMER, pacing)
-        disclaimer_rate = disclaimer_chunks[0][1]
-
-        running_sec = 0.0
-        last_guard = 0.0
-        disclaimer_count = 0
-
-        def emit(chunks: list, tail_pause: float = 0.0) -> None:
-            nonlocal running_sec
-            for pcm, rate in chunks:
-                wr.writeframes(pcm)
-                running_sec += _seconds(rate, len(pcm) // 2)
-            if tail_pause > 0:
-                wr.writeframes(_silence(disclaimer_rate, tail_pause)[0])
-                running_sec += tail_pause
-
-        def emit_disclaimer() -> None:
-            nonlocal last_guard, disclaimer_count
-            emit(disclaimer_chunks)
-            last_guard = running_sec
-            disclaimer_count += 1
-
-        with wave.open(str(out_path), "wb") as wr:
-            wr.setnchannels(1)
-            wr.setsampwidth(2)
-            wr.setframerate(disclaimer_rate)
-
-            for idx, chapter in enumerate(chapters, 1):
-                # Guardrail at each chapter start.
-                emit_disclaimer()
-
-                # Spoken heading so the listener knows where they are.
-                intro = CHAPTER_INTRO.format(n=idx)
-                if (chapter.title or "").strip():
-                    intro = f"{intro} {chapter.title.strip()}"
-                emit(self.synth(intro, pacing), pacing.chapter_pause)
-
-                body = (chapter.content or "").strip()
-                if body:
-                    paragraphs = _split_paragraphs(body)
-                    for pi, para in enumerate(paragraphs):
-                        if _is_scene_break(para):
-                            if pi > 0:
-                                wr.writeframes(
-                                    _silence(disclaimer_rate, pacing.scene_pause)[0]
-                                )
-                                running_sec += pacing.scene_pause
-                            continue
-                        emit(
-                            self._synth_paragraph(para, pacing, disclaimer_rate),
-                            pacing.paragraph_pause,
-                        )
-
-                # Periodic re-guardrail if long enough since the last one.
-                if running_sec - last_guard >= GUARDRAIL_INTERVAL_SEC:
-                    emit_disclaimer()
-
-        return {
-            "chapters": len(chapters),
-            "duration_seconds": running_sec,
-            "disclaimers": disclaimer_count,
-        }
+        return render_guarded_book(
+            lambda t: self.synth(t, pacing), chapters, out_path, pacing, 22050
+        )
 
 
 def _wav_bytes_from_chunks(chunks: list) -> bytes:

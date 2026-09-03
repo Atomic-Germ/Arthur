@@ -12,6 +12,7 @@ Intelligent writing companion for authors. GhostWriter's AI is Arthur, and Arthu
 - **Influence Analyzer** — maps literary/thematic resonances with cited evidence (craft awareness, not judgment)
 - **Story map** — tension pulse, chapter mass, cast presence grid, arc lanes, story circle, co-presence links -- This is the most useful feature for most authors. It offloads mental overhead that isn't the storyline.
 - **Export** — Markdown, plain text, HTML, DOCX, EPUB, no-publish watermarked WAV, or full JSON backup
+- **Audiobook example** — hear your manuscript read aloud: a higher-quality Audio8 voice (optionally zero-shot cloned from your own reference recording) at 16 kHz, with spoken AI/publication disclaimers embedded so it can never be published; piper remains the lightweight in-editor "Listen" voice and the fallback
 - **Local-first LLM** — any OpenAI-compatible API (llama.cpp server, Ollama, OpenAI, FastFlowLM, etc)
 - **Offline fallbacks** — useful checklists when no model is running
 
@@ -75,6 +76,23 @@ export GW_LLM_MODEL=llama3.2
 ```
 
 Without a model, the app still runs; assist endpoints return offline guidance.
+
+### 4. Audiobook example (optional)
+
+The guarded audiobook preview defaults to the Audio8 TTS engine. Download its
+model once (≈1.7 GB into `data/hf`):
+
+```bash
+cd backend && python -m app.services.audio8 download
+```
+
+Runs on CPU by default (~9× realtime; fine for a preview). Set
+`GW_TTS_DEVICE=cuda` to opt into GPU inference where your torch build is
+stable (some ROCm builds segfault in mamba kernels). To save your own voice
+for cloning, use "Export → add your voice sample" in the app: upload a short
+recording plus its verbatim transcript. Every render embeds spoken
+disclaimers and stays un-publishable.
+
 
 ## Project layout
 
