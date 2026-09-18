@@ -116,7 +116,7 @@ def list_export_formats(project_id: str):
             },
             {
                 "id": "json",
-                "label": "GhostWriter backup",
+                "label": "Arthur backup",
                 "ext": "json",
                 "description": "Full project data (chapters, cast, world)",
             },

@@ -543,7 +543,7 @@ def _to_epub_manuscript(project: Project) -> bytes:
 def _epub_css() -> str:
     """Reflowable novel stylesheet — portrait-friendly, no fixed viewport."""
     return """
-/* GhostWriter novel EPUB — reflowable, LTR, reader-controlled type size */
+/* Arthur novel EPUB — reflowable, LTR, reader-controlled type size */
 @namespace epub "http://www.idpf.org/2007/ops";
 
 html {
@@ -929,7 +929,7 @@ def _to_epub(project: Project) -> bytes:
 
     title = project.title or "Untitled"
     author = project.author or ""
-    publisher = project.publisher or "GhostWriter"
+    publisher = project.publisher or "Arthur"
     lang = (project.language or "en").strip() or "en"
     if project.isbn:
         book_id = f"urn:isbn:{project.isbn}"

@@ -24,7 +24,7 @@ _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 # Used when a thinking model burned its output budget on a reasoning preamble
 # and never emitted the JSON. Short, insistent, and schema-first.
 _RETRY_SYSTEM_PROMPT = (
-    "You are GhostWriter's universe extractor. Your previous attempt returned no "
+    "You are Arthur's universe extractor. Your previous attempt returned no "
     "valid JSON. Now output ONLY a JSON object with exactly three keys describing the "
     "cast, locations, and setting established in the prose below.\n\n"
     'Schema: {"characters": [{"name": "...", "role": "...", "physical_traits": "...", '

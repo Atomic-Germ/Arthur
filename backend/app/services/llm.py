@@ -538,7 +538,7 @@ class LLMService:
             return (
                 "**Offline series check**\n\n"
                 f"Question: {prompt}\n"
-                "With an LLM connected, GhostWriter cross-checks the whole series — "
+                "With an LLM connected, Arthur cross-checks the whole series — "
                 "worldbuilding, lore, and character relationships across every book — "
                 "while ignoring plot.\n\n"
                 f"Cast on file: {char_hint or 'none yet'}\n"
@@ -547,7 +547,7 @@ class LLMService:
         if mode == "canon":
             return (
                 "**Offline canon review**\n\n"
-                "With an LLM connected, GhostWriter compares this manuscript against "
+                "With an LLM connected, Arthur compares this manuscript against "
                 "the series bible, world notes, and cast of every book in the universe, "
                 "and reports what fits, what conflicts, and what would be **new canon**.\n\n"
                 f"Cast on file: {char_hint or 'none yet'}\n"
@@ -556,7 +556,7 @@ class LLMService:
         if mode == "influence":
             return (
                 "**Offline influence checklist**\n\n"
-                "With a model connected, GhostWriter maps stylistic and thematic resonances "
+                "With a model connected, Arthur maps stylistic and thematic resonances "
                 "in your manuscript — not as praise or blame, but as craft awareness.\n\n"
                 "Self-scan while offline:\n"
                 "- Which sentences could only be *yours*?\n"

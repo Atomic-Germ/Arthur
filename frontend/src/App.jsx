@@ -30,7 +30,7 @@ export default function App() {
         if (!cancelled) {
           setBootError(
             err.message ||
-              "Cannot reach the GhostWriter API. Is the backend running on :8000?"
+              "Cannot reach the Arthur API. Is the backend running on :8000?"
           );
         }
       } finally {
@@ -76,7 +76,7 @@ export default function App() {
     return (
       <div className="flex h-full items-center justify-center p-8">
         <div className="card max-w-md p-8 text-center">
-          <h1 className="mb-2 font-serif text-2xl text-ink-50">GhostWriter</h1>
+          <h1 className="mb-2 font-serif text-2xl text-ink-50">Arthur</h1>
           <p className="mb-4 text-sm text-red-300">{bootError}</p>
           <pre className="mb-4 rounded-lg bg-ink-950 p-3 text-left font-mono text-[11px] text-ink-400">
             {`cd backend && python run.py\ncd frontend && npm run dev`}

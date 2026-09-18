@@ -41,7 +41,7 @@ export default function ProjectList({
           </div>
           <div>
             <h1 className="font-serif text-3xl font-semibold tracking-tight text-ink-50">
-              GhostWriter
+              Arthur
             </h1>
             <p className="text-sm text-ink-400">Story-aware writing companion</p>
           </div>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the GhostWriter API server."""
+"""Run the Arthur API server."""
 
 import uvicorn
 

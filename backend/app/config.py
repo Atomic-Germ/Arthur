@@ -21,7 +21,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "GhostWriter"
+    app_name: str = "Arthur"
     debug: bool = True
 
     data_dir: Path = Field(default=_DEFAULT_DATA)

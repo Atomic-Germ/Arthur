@@ -324,7 +324,7 @@ export default function Workspace({
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-panel-border bg-panel/40 px-4 py-2">
         <div className="flex items-center gap-3">
-          <span className="font-serif text-sm text-accent">👻 GhostWriter</span>
+          <span className="font-serif text-sm text-accent">👻 Arthur</span>
           {project?.genre && (
             <span className="rounded-full border border-panel-border px-2 py-0.5 font-mono text-[10px] text-ink-500">
               {project.genre}

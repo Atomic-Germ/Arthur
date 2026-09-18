@@ -1,1 +1,1 @@
-"""GhostWriter backend application."""
+"""Arthur backend application."""

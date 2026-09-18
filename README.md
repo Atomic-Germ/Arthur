@@ -1,6 +1,6 @@
-# GhostWriter
+# Arthur
 
-Intelligent writing companion for authors. GhostWriter's AI is Arthur, and Arthur is never the author. Arthur does not try to be the author. It reads what you write and keeps story bible of your characters, chapters, and world lore, then uses RAG with an LLM of your choice to help you brainstorm, continue prose, check consistency, and catch plot holes. Most features don't actually require a running LLM -- this is not a story generating bot.
+Intelligent writing companion for authors. Arthur's AI is Arthur, and Arthur is never the author. Arthur does not try to be the author. It reads what you write and keeps story bible of your characters, chapters, and world lore, then uses RAG with an LLM of your choice to help you brainstorm, continue prose, check consistency, and catch plot holes. Most features don't actually require a running LLM -- this is not a story generating bot.
 
 ## Features (MVP)
 
@@ -97,7 +97,7 @@ disclaimers and stays un-publishable.
 ## Project layout
 
 ```
-GhostWriter/
+Arthur/
 ├── backend/
 │   ├── app/
 │   │   ├── api/          # FastAPI routers
@@ -127,7 +127,7 @@ pytest tests/ -q
 
 1. You write chapters and fill character/world panels.
 2. Content is chunked and embedded into a per-project Chroma collection.
-3. On assist, GhostWriter retrieves relevant story fragments + full character dossiers.
+3. On assist, Arthur retrieves relevant story fragments + full character dossiers.
 4. Context is sent to the LLM with a mode-specific system prompt.
 5. Sources used for retrieval are shown in the AI panel.
 
