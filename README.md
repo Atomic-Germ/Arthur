@@ -6,6 +6,8 @@ Intelligent writing companion for authors. Arthur's AI is Arthur, and Arthur is 
 
 - **Distraction-free editor** — projects, chapters, autosave, word counts
 - **Character dossiers** — traits, motivations, speech patterns, relationships
+- **Places** — named locations with type/description/notes, indexed into story memory and carried through exports
+- **Manuscript import** — drag in `.txt`/`.md` manuscripts: chapters split automatically (headings, `Chapter N`, form feeds), front matter becomes metadata, and cast/places/world facts are populated from the prose before you even open a panel. Locative synonyms are discovered with embeddings when sentence-transformers is loaded, and cast/place extraction plus per-chapter summaries kick in when an LLM is connected — nothing blocks when there is no model
 - **World & lore notes** — freeform world-building stored with the manuscript
 - **Story memory (RAG)** — chapters/characters/world notes chunked into ChromaDB
 - **AI assist modes** — Brainstorm · Continue · Consistency Check · Lore · Plot · Influence Check

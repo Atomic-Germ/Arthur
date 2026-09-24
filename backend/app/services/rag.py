@@ -158,6 +158,21 @@ class StoryMemory:
                     }
                 )
 
+            for loc in project.locations:
+                doc = self._location_doc(loc)
+                cid = _stable_id(project.id, "location", loc.id)
+                ids.append(cid)
+                documents.append(doc)
+                metadatas.append(
+                    {
+                        "type": "location",
+                        "project_id": project.id,
+                        "location_id": loc.id,
+                        "name": loc.name,
+                        "title": loc.name,
+                    }
+                )
+
             if project.world_notes.strip():
                 for i, chunk in enumerate(
                     _chunk_text(
@@ -351,6 +366,11 @@ class StoryMemory:
             sections.append("## Characters\n" + "\n\n".join(char_blocks))
             sources.extend([f"Character: {c.name}" for c in project.characters])
 
+        if project.locations:
+            loc_blocks = [self._location_doc(l) for l in project.locations]
+            sections.append("## Locations\n" + "\n\n".join(loc_blocks))
+            sources.extend([f"Location: {l.name}" for l in project.locations])
+
         # Shared series bible — worldbuilding/cast that spans every book
         if project.series.strip():
             bible_section, bible_sources = self.build_series_bible_section(project)
@@ -482,6 +502,15 @@ class StoryMemory:
                 )
                 sources.extend(
                     [f"Character: {c.name} ({book.title})" for c in book.characters]
+                )
+
+            if book.locations:
+                loc_blocks = [self._location_doc(l) for l in book.locations]
+                sections.append(
+                    f"### Locations ({book.title})\n" + "\n\n".join(loc_blocks)
+                )
+                sources.extend(
+                    [f"Location: {l.name} ({book.title})" for l in book.locations]
                 )
 
             if book.world_notes.strip():

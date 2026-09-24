@@ -57,6 +57,17 @@ class LocationBase(BaseModel):
     notes: str = ""
 
 
+class LocationCreate(LocationBase):
+    pass
+
+
+class LocationUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    description: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class Location(LocationBase):
     id: str = Field(default_factory=new_id)
     created_at: str = Field(default_factory=_now)
@@ -130,6 +141,7 @@ class Project(ProjectBase):
     id: str = Field(default_factory=new_id)
     characters: list[Character] = Field(default_factory=list)
     chapters: list[Chapter] = Field(default_factory=list)
+    locations: list[Location] = Field(default_factory=list)
     world_notes: str = ""
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
@@ -144,6 +156,7 @@ class ProjectSummary(BaseModel):
     series: str = ""
     chapter_count: int = 0
     character_count: int = 0
+    location_count: int = 0
     word_count: int = 0
     updated_at: str = ""
 
@@ -238,3 +251,31 @@ class HealthResponse(BaseModel):
     status: str
     llm_available: bool
     embedding_ready: bool
+
+
+# ── Import ────────────────────────────────────────────────
+
+class ImportedProject(BaseModel):
+    """A single book created from an imported manuscript file."""
+    id: str
+    title: str
+    series: str = ""
+    series_position: int = 0
+    chapter_count: int = 0
+    word_count: int = 0
+    character_count: int = 0
+    location_count: int = 0
+
+
+class ImportReport(BaseModel):
+    """Outcome of a manuscript import: created books + what got populated."""
+    mode: str = "single"  # single | series | merge
+    series: str = ""
+    projects: list[ImportedProject] = Field(default_factory=list)
+    llm_used: bool = False
+    characters_added: int = 0
+    locations_added: int = 0
+    world_facts_added: int = 0
+    summaries_generated: int = 0
+    bible_updated: bool = False
+    warnings: list[str] = Field(default_factory=list)

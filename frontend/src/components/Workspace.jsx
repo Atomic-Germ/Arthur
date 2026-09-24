@@ -7,6 +7,7 @@ import ChapterSidebar from "./ChapterSidebar";
 import CharacterPanel from "./CharacterPanel";
 import DraftCompare from "./DraftCompare";
 import Editor from "./Editor";
+import LocationPanel from "./LocationPanel";
 import SeriesPanel from "./SeriesPanel";
 import StatusPill from "./StatusPill";
 import StoryMap from "./StoryMap";
@@ -42,6 +43,7 @@ export default function Workspace({
   const [project, setProject] = useState(null);
   const [chapters, setChapters] = useState([]);
   const [characters, setCharacters] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [activeChapterId, setActiveChapterId] = useState(null);
   const [rightTab, setRightTab] = useState("ai");
   const [saving, setSaving] = useState(false);
@@ -96,6 +98,7 @@ export default function Workspace({
       const sorted = [...(p.chapters || [])].sort((a, b) => a.order - b.order);
       setChapters(sorted);
       setCharacters(p.characters || []);
+      setLocations(p.locations || []);
       sorted.forEach((c) => {
         latestContent.current[c.id] = c.content || "";
       });
@@ -180,6 +183,23 @@ export default function Workspace({
   async function handleDeleteCharacter(id) {
     await api.deleteCharacter(projectId, id);
     setCharacters((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  async function handleCreateLocation(body) {
+    const loc = await api.createLocation(projectId, body);
+    setLocations((prev) => [...prev, loc]);
+    return loc;
+  }
+
+  async function handleUpdateLocation(id, body) {
+    const loc = await api.updateLocation(projectId, id, body);
+    setLocations((prev) => prev.map((l) => (l.id === id ? loc : l)));
+    return loc;
+  }
+
+  async function handleDeleteLocation(id) {
+    await api.deleteLocation(projectId, id);
+    setLocations((prev) => prev.filter((l) => l.id !== id));
   }
 
   async function handleImportSeriesCast() {
@@ -468,13 +488,25 @@ export default function Workspace({
               />
             )}
             {rightTab === "world" && (
-              <WorldNotes
-                notes={project?.world_notes || ""}
-                series={project?.series || ""}
-                seriesList={seriesList}
-                onSave={handleSaveWorld}
-                onChangeSeries={handleChangeSeries}
-              />
+              <div className="flex h-full flex-col">
+                <div className="min-h-0 flex-1 border-b border-panel-border">
+                  <WorldNotes
+                    notes={project?.world_notes || ""}
+                    series={project?.series || ""}
+                    seriesList={seriesList}
+                    onSave={handleSaveWorld}
+                    onChangeSeries={handleChangeSeries}
+                  />
+                </div>
+                <div className="min-h-0 flex-[1.2]">
+                  <LocationPanel
+                    locations={locations}
+                    onCreate={handleCreateLocation}
+                    onUpdate={handleUpdateLocation}
+                    onDelete={handleDeleteLocation}
+                  />
+                </div>
+              </div>
             )}
             {rightTab === "series" && project?.series?.trim() && (
               <SeriesPanel

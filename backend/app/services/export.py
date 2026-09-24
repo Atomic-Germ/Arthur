@@ -174,6 +174,13 @@ def _to_markdown(project: Project) -> str:
             parts.append(f"- **{c.name}**{role}")
         parts.append("")
 
+    if project.locations:
+        parts += ["## Places", ""]
+        for loc in project.locations:
+            desc = f" — {loc.type}" if loc.type else ""
+            parts.append(f"- **{loc.name}**{desc}")
+        parts.append("")
+
     for i, ch in enumerate(_sorted_chapters(project), start=1):
         title = ch.title or f"Chapter {i}"
         parts += [f"## {title}", ""]
@@ -328,6 +335,12 @@ def _to_docx(project: Project) -> bytes:
         doc.add_heading("Dramatis Personae", level=1)
         for c in project.characters:
             line = c.name + (f" — {c.role}" if c.role else "")
+            doc.add_paragraph(line, style="List Bullet")
+
+    if project.locations:
+        doc.add_heading("Places", level=1)
+        for loc in project.locations:
+            line = loc.name + (f" — {loc.type}" if loc.type else "")
             doc.add_paragraph(line, style="List Bullet")
 
     for i, ch in enumerate(_sorted_chapters(project), start=1):

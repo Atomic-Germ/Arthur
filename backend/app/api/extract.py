@@ -295,7 +295,6 @@ def _parse_extraction(raw: str) -> ExtractResponse:
 async def extract_from_story(project_id: str, payload: ExtractRequest):
     """Read prose and return proposed characters + world facts (no plot)."""
     store = get_store()
-    llm = get_llm()
 
     try:
         project = await asyncio.to_thread(store.get_project, project_id)
@@ -308,6 +307,26 @@ async def extract_from_story(project_id: str, payload: ExtractRequest):
     if not chapters:
         return ExtractResponse(raw="No chapter content to extract from.")
 
+    available = await get_llm().check_available()
+    if not available:
+        raise HTTPException(
+            status_code=503,
+            detail="No LLM connected — start llama.cpp to extract from the story.",
+        )
+
+    return await run_extraction(project, get_llm(), chapter_id=payload.chapter_id)
+
+
+async def run_extraction(
+    project, llm, chapter_id: str | None = None
+) -> ExtractResponse:
+    """Run the LLM universe-extraction over a project and parse the result.
+
+    Shared by the /extract endpoint and the import pipeline.
+    """
+    chapters = sorted(project.chapters, key=lambda c: c.order)
+    if chapter_id:
+        chapters = [c for c in chapters if c.id == chapter_id]
     bodies = [(ch.content or "").strip() for ch in chapters]
     bodies = [b for b in bodies if b]
     if not bodies:
@@ -328,13 +347,6 @@ async def extract_from_story(project_id: str, payload: ExtractRequest):
         "(ignore plot):\n\n"
         + "\n\n".join(prose_parts)
     )
-
-    available = await llm.check_available()
-    if not available:
-        raise HTTPException(
-            status_code=503,
-            detail="No LLM connected — start llama.cpp to extract from the story.",
-        )
 
     async def _run(system_prompt: str, max_tokens: int) -> str:
         try:
@@ -362,11 +374,4 @@ async def extract_from_story(project_id: str, payload: ExtractRequest):
         else:
             result = ExtractResponse(raw=retried or raw)
 
-    logger.info(
-        "Extract done project=%s characters=%s locations=%s facts=%s",
-        project_id,
-        len(result.characters),
-        len(result.locations),
-        len(result.world_facts),
-    )
     return result

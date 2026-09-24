@@ -72,6 +72,18 @@ export default function App() {
     return forked;
   }
 
+  async function handleImport(files, opts) {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f));
+    form.append("mode", opts.mode || "auto");
+    form.append("series", opts.series || "");
+    form.append("title", opts.title || "");
+    form.append("analyze", opts.analyze ? "true" : "false");
+    const report = await api.importManuscript(form);
+    await refreshProjects();
+    return report;
+  }
+
   if (bootError && !activeProjectId) {
     return (
       <div className="flex h-full items-center justify-center p-8">
@@ -120,6 +132,7 @@ export default function App() {
         onCreate={handleCreate}
         onDelete={handleDelete}
         onFork={handleFork}
+        onImport={handleImport}
       />
     </div>
   );

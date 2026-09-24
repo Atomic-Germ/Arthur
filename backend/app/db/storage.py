@@ -17,6 +17,9 @@ from app.models.schemas import (
     Character,
     CharacterCreate,
     CharacterUpdate,
+    Location,
+    LocationCreate,
+    LocationUpdate,
     Project,
     ProjectCreate,
     ProjectSummary,
@@ -127,6 +130,7 @@ class ProjectStore:
                             series=data.get("series", ""),
                             chapter_count=len(chapters),
                             character_count=len(characters),
+                            location_count=len(data.get("locations", [])),
                             word_count=word_count,
                             updated_at=data.get("updated_at", ""),
                         )
@@ -157,6 +161,7 @@ class ProjectStore:
                 language=payload.language,
                 characters=[],
                 chapters=[],
+                locations=[],
                 world_notes="",
                 created_at=_now(),
                 updated_at=_now(),
@@ -228,6 +233,19 @@ class ProjectStore:
                 for ch in original.chapters
             ]
 
+            new_locations = [
+                Location(
+                    id=remap_id(loc.id),
+                    name=loc.name,
+                    type=loc.type,
+                    description=loc.description,
+                    notes=loc.notes,
+                    created_at=now,
+                    updated_at=now,
+                )
+                for loc in original.locations
+            ]
+
             forked = Project(
                 id=new_id(),
                 title=new_title,
@@ -244,6 +262,7 @@ class ProjectStore:
                 language=original.language,
                 characters=new_chars,
                 chapters=new_chapters,
+                locations=new_locations,
                 world_notes=original.world_notes,
                 created_at=now,
                 updated_at=now,
@@ -356,6 +375,181 @@ class ProjectStore:
                 raise FileNotFoundError(f"Chapter {chapter_id} not found")
             self._renumber_chapters(project)
             self._save(project)
+
+    # ── Locations ────────────────────────────────────────
+
+    def list_locations(self, project_id: str) -> list[Location]:
+        return self.get_project(project_id).locations
+
+    def get_location(self, project_id: str, location_id: str) -> Location:
+        project = self.get_project(project_id)
+        for loc in project.locations:
+            if loc.id == location_id:
+                return loc
+        raise FileNotFoundError(f"Location {location_id} not found")
+
+    def add_location(self, project_id: str, payload: LocationCreate) -> Location:
+        with _file_lock:
+            project = self._load(project_id)
+            location = Location(
+                id=new_id(),
+                **payload.model_dump(),
+                created_at=_now(),
+                updated_at=_now(),
+            )
+            project.locations.append(location)
+            self._save(project)
+            return location
+
+    def update_location(
+        self, project_id: str, location_id: str, payload: LocationUpdate
+    ) -> Location:
+        with _file_lock:
+            project = self._load(project_id)
+            for i, loc in enumerate(project.locations):
+                if loc.id == location_id:
+                    data = loc.model_dump()
+                    data.update(payload.model_dump(exclude_unset=True))
+                    data["updated_at"] = _now()
+                    updated = Location.model_validate(data)
+                    project.locations[i] = updated
+                    self._save(project)
+                    return updated
+            raise FileNotFoundError(f"Location {location_id} not found")
+
+    def delete_location(self, project_id: str, location_id: str) -> None:
+        with _file_lock:
+            project = self._load(project_id)
+            before = len(project.locations)
+            project.locations = [
+                loc for loc in project.locations if loc.id != location_id
+            ]
+            if len(project.locations) == before:
+                raise FileNotFoundError(f"Location {location_id} not found")
+            self._save(project)
+
+    # ── Bulk import helpers (single write per batch) ─────
+
+    def add_chapters(
+        self, project_id: str, payloads: list[ChapterCreate]
+    ) -> list[Chapter]:
+        with _file_lock:
+            project = self._load(project_id)
+            now = _now()
+            added: list[Chapter] = []
+            for i, payload in enumerate(payloads):
+                chapter = Chapter(
+                    id=new_id(),
+                    title=payload.title,
+                    content=payload.content,
+                    order=payload.order if payload.order else len(project.chapters),
+                    summary=payload.summary,
+                    word_count=_word_count(payload.content),
+                    created_at=now,
+                    updated_at=now,
+                )
+                if not chapter.content.strip():
+                    continue
+                project.chapters.append(chapter)
+                added.append(chapter)
+            self._renumber_chapters(project)
+            if added:
+                self._save(project)
+            return added
+
+    def add_characters(
+        self, project_id: str, payloads: list[CharacterCreate]
+    ) -> list[Character]:
+        with _file_lock:
+            project = self._load(project_id)
+            now = _now()
+            existing = {
+                c.name.strip().lower() for c in project.characters if c.name.strip()
+            }
+            added: list[Character] = []
+            for payload in payloads:
+                key = (payload.name or "").strip().lower()
+                if not key or key in existing:
+                    continue
+                existing.add(key)
+                character = Character(
+                    id=new_id(),
+                    **payload.model_dump(),
+                    created_at=now,
+                    updated_at=now,
+                )
+                project.characters.append(character)
+                added.append(character)
+            if added:
+                self._save(project)
+            return added
+
+    def add_locations(
+        self, project_id: str, payloads: list[LocationCreate]
+    ) -> list[Location]:
+        with _file_lock:
+            project = self._load(project_id)
+            now = _now()
+            existing = {
+                loc.name.strip().lower()
+                for loc in project.locations
+                if loc.name.strip()
+            }
+            added: list[Location] = []
+            for payload in payloads:
+                key = (payload.name or "").strip().lower()
+                if not key or key in existing:
+                    continue
+                existing.add(key)
+                location = Location(
+                    id=new_id(),
+                    **payload.model_dump(),
+                    created_at=now,
+                    updated_at=now,
+                )
+                project.locations.append(location)
+                added.append(location)
+            if added:
+                self._save(project)
+            return added
+
+    def update_chapter_summaries(
+        self, project_id: str, summaries: dict[str, str]
+    ) -> Project:
+        """Set summary by chapter id (add-only: never overwrite a summary)."""
+        with _file_lock:
+            project = self._load(project_id)
+            changed = False
+            for ch in project.chapters:
+                if ch.id in summaries and not (ch.summary or "").strip():
+                    ch.summary = (summaries.get(ch.id) or "").strip()
+                    ch.updated_at = _now()
+                    changed = True
+            if changed:
+                self._save(project)
+            return project
+
+    def append_world_notes_lines(self, project_id: str, lines: list[str]) -> Project:
+        """Append facts as '- fact' bullets, skipping ones already present."""
+        with _file_lock:
+            project = self._load(project_id)
+            current = (project.world_notes or "").split("\n")
+            seen = {ln.strip().lower() for ln in current if ln.strip()}
+            to_add: list[str] = []
+            for fact in lines:
+                s = (fact or "").strip()
+                if not s:
+                    continue
+                if s.lower() in seen:
+                    continue
+                if any(s.lower() in l for l in seen):
+                    continue
+                seen.add(s.lower())
+                to_add.append(f"- {s}")
+            if to_add:
+                project.world_notes = ("\n".join(current).strip() + "\n\n" + "\n".join(to_add)).strip() if current else "\n".join(to_add)
+                self._save(project)
+            return project
 
     # ── Series ─────────────────────────────────────────────
 
