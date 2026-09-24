@@ -192,6 +192,27 @@ export const api = {
       timeoutMs: 3_600_000,
     }),
 
+  /** Import text/markdown files as manuscript(s). Multipart; no client
+   *  timeout — with an LLM attached the pass can take several minutes. */
+  async importManuscript(formData) {
+    const res = await fetch(`${BASE}/import`, {
+      method: "POST",
+      body: formData,
+    });
+    let data = null;
+    const text = await res.text();
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
+    if (!res.ok) {
+      const detail = data?.detail || data || res.statusText;
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    return data;
+  },
+
   ttsStatus: (projectId) =>
     request(`/projects/${projectId}/tts/status`, { timeoutMs: 10_000 }),
 
@@ -319,6 +340,26 @@ export const api = {
     }),
   deleteCharacter: (projectId, characterId) =>
     request(`/projects/${projectId}/characters/${characterId}`, {
+      method: "DELETE",
+      timeoutMs: 10_000,
+    }),
+
+  listLocations: (projectId) =>
+    request(`/projects/${projectId}/locations`, { timeoutMs: 10_000 }),
+  createLocation: (projectId, body) =>
+    request(`/projects/${projectId}/locations`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      timeoutMs: 10_000,
+    }),
+  updateLocation: (projectId, locationId, body) =>
+    request(`/projects/${projectId}/locations/${locationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      timeoutMs: 10_000,
+    }),
+  deleteLocation: (projectId, locationId) =>
+    request(`/projects/${projectId}/locations/${locationId}`, {
       method: "DELETE",
       timeoutMs: 10_000,
     }),

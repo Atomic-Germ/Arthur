@@ -8,6 +8,7 @@ export default function ProjectList({
   onCreate,
   onDelete,
   onFork,
+  onImport,
 }) {
   const [form, setForm] = useState({
     title: "",
@@ -18,17 +19,47 @@ export default function ProjectList({
   });
   const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importFiles, setImportFiles] = useState([]);
+  const [importOpts, setImportOpts] = useState({
+    mode: "auto",
+    series: "",
+    title: "",
+    analyze: true,
+  });
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState("");
 
-  async function handleCreate(e) {
+  function resetImport() {
+    setImportFiles([]);
+    setImportOpts({ mode: "auto", series: "", title: "", analyze: true });
+    setImportResult(null);
+    setImportError("");
+  }
+
+  function toggleImport() {
+    setShowImport((v) => {
+      if (v) {
+        setShowForm(false);
+        resetImport();
+      }
+      return !v;
+    });
+  }
+
+  async function handleImport(e) {
     e.preventDefault();
-    if (!form.title.trim()) return;
-    setCreating(true);
+    if (!importFiles.length) return;
+    setImporting(true);
+    setImportError("");
     try {
-      await onCreate(form);
-      setForm({ title: "", genre: "", description: "", premise: "", series: "" });
-      setShowForm(false);
+      const report = await onImport(importFiles, importOpts);
+      setImportResult(report);
+    } catch (err) {
+      setImportError(err.message || "Import failed");
     } finally {
-      setCreating(false);
+      setImporting(false);
     }
   }
 
@@ -50,14 +81,164 @@ export default function ProjectList({
 
       <div className="mb-6 flex items-center justify-between">
         <h2 className="panel-title">Your manuscripts</h2>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => setShowForm((v) => !v)}
-        >
-          {showForm ? "Cancel" : "New project"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => {
+              setShowForm(false);
+              if (showImport) resetImport();
+              setShowImport(!showImport);
+            }}
+          >
+            {showImport ? "Cancel" : "Import"}
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              setShowImport(false);
+              if (showForm) resetImport();
+              setShowForm((v) => !v);
+            }}
+          >
+            {showForm ? "Cancel" : "New project"}
+          </button>
+        </div>
       </div>
+
+      {showImport && (
+        <form onSubmit={handleImport} className="card mb-8 grid gap-4 p-5">
+          <div className="sm:col-span-2">
+            <label className="label">Manuscript files</label>
+            <input
+              className="input file:mr-3 file:rounded-md file:border-0 file:bg-accent/15 file:px-3 file:py-1 file:text-xs file:font-medium file:text-accent"
+              type="file"
+              multiple
+              accept=".txt,.text,.md,.markdown,.mdown,.mkd,.rst"
+              onChange={(e) => setImportFiles([...e.target.files])}
+            />
+            <p className="mt-1 text-[11px] text-ink-500">
+              Text or Markdown (≤25 MB each). One file = one book; several files
+              can be merged into a single project or become a series.
+            </p>
+          </div>
+          <div>
+            <label className="label">Mode</label>
+            <select
+              className="input"
+              value={importOpts.mode}
+              onChange={(e) => setImportOpts({ ...importOpts, mode: e.target.value })}
+            >
+              <option value="auto">Auto (best guess)</option>
+              <option value="single">Single book — merge all files</option>
+              <option value="series">Series — one book per file</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">
+              Series <span className="font-normal text-ink-500">(optional)</span>
+            </label>
+            <input
+              className="input"
+              list="pl-import-series-list"
+              value={importOpts.series}
+              onChange={(e) => setImportOpts({ ...importOpts, series: e.target.value })}
+              placeholder={
+                seriesList.length
+                  ? "Pick an existing series or type a new one"
+                  : "e.g. The Drowned Chronicles"
+              }
+            />
+            <datalist id="pl-import-series-list">
+              {seriesList.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">
+              Title <span className="font-normal text-ink-500">(optional)</span>
+            </label>
+            <input
+              className="input"
+              value={importOpts.title}
+              onChange={(e) => setImportOpts({ ...importOpts, title: e.target.value })}
+              placeholder="Overrides the one detected from front matter"
+            />
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm text-ink-300">
+              <input
+                type="checkbox"
+                className="accent-accent"
+                checked={importOpts.analyze}
+                onChange={(e) =>
+                  setImportOpts({ ...importOpts, analyze: e.target.checked })
+                }
+              />
+              Analyze with the LLM (extraction + summaries when available)
+            </label>
+          </div>
+          <div className="sm:col-span-2 flex justify-end gap-2">
+            {importResult && (
+              <p className="mr-auto self-center text-xs text-emerald-300">
+                {importResult.projects.length}{" "}
+                {importResult.projects.length === 1 ? "book" : "books"} imported
+                {importResult.series ? ` into “${importResult.series}”` : ""}
+                {importResult.bible_updated ? " · bible updated" : ""}
+              </p>
+            )}
+            <button type="submit" className="btn-primary" disabled={importing || !importFiles.length}>
+              {importing ? "Importing…" : "Import"}
+            </button>
+          </div>
+          {importError && (
+            <p className="sm:col-span-2 rounded-md bg-red-950/30 px-3 py-2 text-xs text-red-200">
+              {importError}
+            </p>
+          )}
+          {importResult && (importResult.warnings || []).length > 0 && (
+            <ul className="sm:col-span-2 space-y-1 rounded-md bg-ink-900/40 px-3 py-2 text-[11px] text-ink-400">
+              {(importResult.warnings || []).map((w, i) => (
+                <li key={i}>• {w}</li>
+              ))}
+            </ul>
+          )}
+          {importResult && importResult.projects.length > 0 && (
+            <div className="sm:col-span-2 overflow-hidden rounded-md border border-panel-border">
+              <table className="w-full text-left text-xs">
+                <tbody>
+                  {importResult.projects.map((p) => (
+                    <tr key={p.id} className="border-b border-panel-border last:border-0">
+                      <td className="px-3 py-1.5 font-medium text-ink-200">{p.title}</td>
+                      <td className="px-3 py-1.5 font-mono text-[11px] text-ink-500">
+                        {p.series ? `#${p.series_position}` : ""}
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-[11px] text-ink-500">
+                        {p.chapter_count} ch
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-[11px] text-ink-500">
+                        {p.character_count} cast
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-[11px] text-ink-500">
+                        {p.location_count} places
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {importResult && importResult.llm_used && (
+            <p className="sm:col-span-2 text-[11px] text-ink-500">
+              +{importResult.characters_added} cast · +{importResult.locations_added}{" "}
+              places · +{importResult.world_facts_added} world facts · +
+              {importResult.summaries_generated} chapter summaries
+            </p>
+          )}
+        </form>
+      )}
 
       {showForm && (
         <form onSubmit={handleCreate} className="card mb-8 grid gap-4 p-5 sm:grid-cols-2">

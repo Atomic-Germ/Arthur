@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import assist, chapters, characters, export, extract, projects, series, tts
+from app.api import assist, chapters, characters, export, extract, imports, locations, projects, series, tts
 from app.config import get_settings
 from app.models.schemas import HealthResponse
 from app.services.embeddings import get_status as embedding_status, is_embedding_ready
@@ -69,6 +69,8 @@ def create_app() -> FastAPI:
     app.include_router(assist.router, prefix="/api")
     app.include_router(series.router, prefix="/api")
     app.include_router(extract.router, prefix="/api")
+    app.include_router(imports.router, prefix="/api")
+    app.include_router(locations.router, prefix="/api")
     app.include_router(tts.router, prefix="/api")
     app.include_router(tts.voice_router, prefix="/api")
 
